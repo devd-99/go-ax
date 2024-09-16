@@ -1,0 +1,169 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+
+	"github.com/brevis-network/brevis-sdk/sdk"
+)
+
+const (
+	DuneTransactionsURL = "https://api.dune.com/api/beta/transactions/%s?chain_ids=11155111"
+	DuneBalanceURL      = "https://api.dune.com/api/beta/balance/%s?chain_ids=11155111"
+	DuneAPIKey          = "nAAC4sDHqo3cvmemQCrDpnXlEgjr27Ip"
+)
+
+type Request struct {
+	Threshold     string `json:"threshold"`
+	WalletAddress string `json:"walletAddress"`
+}
+
+type Transaction struct {
+	Hash  string `json:"hash"`
+	Value string `json:"value"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+}
+
+type DuneTransactionsResponse struct {
+	Transactions []Transaction `json:"transactions"`
+}
+
+type Balance struct {
+	Amount string `json:"amount"`
+}
+
+type DuneBalanceResponse struct {
+	Balances []Balance `json:"balances"`
+}
+
+func queryDuneTransactions(address string) (*DuneTransactionsResponse, error) {
+	url := fmt.Sprintf(DuneTransactionsURL, address)
+	return makeRequest[DuneTransactionsResponse](url)
+}
+
+func queryDuneBalance(address string) (*DuneBalanceResponse, error) {
+	url := fmt.Sprintf(DuneBalanceURL, address)
+	return makeRequest[DuneBalanceResponse](url)
+}
+
+func makeRequest[T any](url string) (*T, error) {
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("X-Dune-Api-Key", DuneAPIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := ioutil.ReadAll(resp.Body)
+	var result T
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func main() {
+	http.HandleFunc("/check-wallet", handleCheckWallet)
+
+	http.HandleFunc("/check-transaction", handleCheckTransaction)
+	http.ListenAndServe(":8080", nil)
+}
+
+// handleCheckWallet is the handler for the /check-wallet endpoint
+func handleCheckWallet(w http.ResponseWriter, r *http.Request) {
+	var req Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Query Dune API for transactions
+	transactionsResp, err := queryDuneTransactions(req.WalletAddress)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Query Dune API for balance
+	balanceResp, err := queryDuneBalance(req.WalletAddress)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Initialize Brevis app
+	app, err := sdk.NewBrevisApp()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Println(transactionsResp)
+	fmt.Println(balanceResp)
+	fmt.Println(app)
+
+	// Add storage for current balance
+	// balance, _ := new(big.Int).SetString(balanceResp.Balances[0].Amount, 10)
+	// app.AddStorage(sdk.StorageData{
+	// 	BlockNum: big.NewInt(0),
+	// 	Address:  common.HexToAddress(req.WalletAddress),
+	// 	// Slot:      0,
+	// 	Value: common.BytesToHash(balance.Bytes()),
+	// })
+
+	// // Add transactions
+	// transactionCount := 0
+	// for i, tx := range transactionsResp.Transactions {
+	// 	if i >= 30 { // Limit to 30 transactions
+	// 		break
+	// 	}
+	// 	value, _ := new(big.Int).SetString(tx.Value[2:], 16) // Remove "0x" prefix
+	// 	app.AddTransaction(sdk.TransactionData{
+	// 		Hash:     common.HexToHash(tx.Hash),
+	// 		ChainId:  big.NewInt(11155111), // Sepolia chain ID
+	// 		BlockNum: big.NewInt(int64(i)), // We don't have real block numbers, so use index
+	// 		Value:    value,
+	// 		From:     common.HexToAddress(tx.From),
+	// 		To:       common.HexToAddress(tx.To),
+	// 	})
+	// 	transactionCount++
+	// }
+
+	// Build circuit input
+	// threshold, _ := new(big.Int).SetString(req.Threshold, 10)
+	// appCircuit := &AppCircuit{
+	// 	Threshold:        sdk.ConstUint248(threshold),
+	// 	WalletAddress:    sdk.ConstBytes32(common.HexToAddress(req.WalletAddress).Bytes()),
+	// 	TransactionCount: sdk.ConstUint248(big.NewInt(int64(transactionCount))),
+	// 	// You would need to implement a function to compute the transactions hash
+	// 	// TransactionsHash: computeTransactionsHash(transactionsResp.Transactions[:transactionCount]),
+	// }
+	// circuitInput, err := app.BuildCircuitInput(appCircuit)
+	// if err != nil {
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	return
+	// }
+	// fmt.Println(circuitInput)
+	// Here you would send the circuitInput to your prover service
+	// For now, we'll just return a success message
+	w.Write([]byte("Circuit input built successfully"))
+}
+
+// handleCheckTransaction is the handler for the /check-transaction endpoint
+func handleCheckTransaction(w http.ResponseWriter, r *http.Request) {
+	var req Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	//dune call to q1
+
+}
